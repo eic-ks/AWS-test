@@ -1,0 +1,124 @@
+<!-- simple-log(just loging) -->
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>掲示板投稿テスト</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        #posts-container { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 20px; }
+        .post-item { border: 1px solid #eee; padding: 10px; margin-bottom: 10px; background-color: #f9f9f9; }
+        .post-item p { margin: 0; }
+        .post-item small { color: #888; font-size: 0.8em; }
+        textarea { width: 400px; max-width: 100%; }
+        button { padding: 8px 15px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        #message { margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="new-post-container">
+        <h1>新しい投稿</h1>
+        <textarea id="postContent" rows="5" cols="50" placeholder="ここに投稿内容を入力してください。"></textarea><br>
+        <button onclick="submitPost()">投稿する</button>
+        <p id="message"></p>
+    </div>
+
+    <div class="posts-container">
+        <h2>投稿一覧</h2>
+        <button onclick="fetchPosts()">投稿を再読み込み</button>
+        <div id="posts-container">
+            <p>投稿がありません。</p>
+        </div>
+    </div>
+
+
+    <script>
+        const serverUrl = SERVER_URL //サーバーのURL
+
+        async function submitPost() {
+            const postContent = document.getElementById('postContent').value;
+            const messageElement = document.getElementById('message');
+
+            if (!postContent.trim()) {
+                messageElement.textContent = "投稿内容を入力してください。";
+                messageElement.style.color = "red";
+                return;
+            }
+
+            try {
+                const response = await fetch(`${serverUrl}/post`, { // POSTエンドポイント
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ content: postContent })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    messageElement.textContent = `投稿が成功しました！ (ID: ${data.postId})`;
+                    messageElement.style.color = "green";
+                    document.getElementById('postContent').value = ''; // テキストエリアをクリア
+                    fetchPosts(); // 新しい投稿が追加されたら一覧を再読み込み
+                } else {
+                    messageElement.textContent = `投稿に失敗しました: ${data.message || response.statusText}`;
+                    messageElement.style.color = "red";
+                }
+            } catch (error) {
+                console.error('Error submitting post:', error);
+                messageElement.textContent = `ネットワークエラーが発生しました: ${error.message}`;
+                messageElement.style.color = "red";
+            }
+        }
+
+        async function fetchPosts() {
+            const postsContainer = document.getElementById('posts-container');
+            postsContainer.innerHTML = '<p>投稿を読み込み中...</p>'; // 読み込み中の表示
+
+            try {
+                const response = await fetch(`${serverUrl}/posts`); // GETエンドポイント
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const posts = await response.json(); // 投稿データをJSONとして取得
+
+                postsContainer.innerHTML = ''; // 既存の投稿をクリア
+
+                if (posts.length === 0) {
+                    postsContainer.innerHTML = '<p>まだ投稿がありません。</p>';
+                } else {
+                    posts.forEach(post => {
+                        const postElement = document.createElement('div');
+                        postElement.className = 'post-item';
+                        // 日時を読みやすい形式に変換 (例: 2025-06-09T12:34:56.789Z -> 2025/06/09 21:59)
+                        const date = new Date(post.timestamp);
+                        const formattedDate = date.toLocaleString('ja-JP', {
+                            year: 'numeric', month: '2-digit', day: '2-digit',
+                            hour: '2-digit', minute: '2-digit'
+                        });
+
+                        postElement.innerHTML = `
+                            <p>${post.content}</p>
+                            <small>投稿日時: ${formattedDate} (ID: ${post.id})</small>
+                        `;
+                        postsContainer.appendChild(postElement);
+                    });
+                }
+
+            } catch (error) {
+                console.error('Error fetching posts:', error);
+                postsContainer.innerHTML = `<p style="color: red;">投稿の読み込みに失敗しました: ${error.message}</p>`;
+            }
+        }
+
+        // ページ読み込み時に投稿を自動的に読み込む
+        window.onload = fetchPosts;
+    </script>
+</body>
+</html>
