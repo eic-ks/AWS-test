@@ -104,6 +104,23 @@ export class MySimpleWebsiteStack extends Stack {
       distributionPaths: ['/*'],
     });
 
+
+    // フロントエンド用の設定ファイル(config.js)を動的に生成してデプロイ
+    new s3deploy.BucketDeployment(this, 'DeployConfig', {
+      sources: [
+        s3deploy.Source.data(
+          '/config.js', // S3バケット内のファイル名
+          `window.APP_CONFIG = {
+            apiUrl: "${api.url}"
+          };`
+        )
+      ],
+      destinationBucket: websiteBucket,
+      distribution: distribution,
+      distributionPaths: ['/config.js'], // config.jsのキャッシュもクリア
+    });
+
+
     // 4. CloudFrontのURLを出力
     new CfnOutput(this, 'DistributionDomainName', {
       value: distribution.distributionDomainName,
