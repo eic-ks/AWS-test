@@ -1,9 +1,11 @@
-// back
+// backend
 import { aws_apigateway as apigateway } from 'aws-cdk-lib';
-import { aws_lambda_nodejs as lambda } from 'aws-cdk-lib';
+// import { aws_lambda_nodejs as lambda } from 'aws-cdk-lib'; // lambdaをtypescriptで書く場合
+import { aws_lambda as lambda } from 'aws-cdk-lib';
+import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
 import { aws_dynamodb as dynamodb } from 'aws-cdk-lib';
 import * as path from 'path';
-// front
+// frontend
 import { Stack, StackProps, CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
@@ -36,8 +38,10 @@ export class MySimpleWebsiteStack extends Stack {
     
     // 3. Lambda関数を作成
     // 投稿を取得するLambda
-    const getPostsLambda = new lambda.NodejsFunction(this, 'GetPostsHandler', {
-      entry: path.join(__dirname, '../lambda/getPosts.ts'),
+    const getPostsLambda = new PythonFunction(this, 'GetPostsHandler', {
+      entry: path.join(__dirname, '../lambda'),
+      runtime: lambda.Runtime.PYTHON_3_11,  // ★必須: Pythonのバージョンを指定
+      index: 'getPosts.py',
       handler: 'handler',
       environment: {
         TABLE_NAME: table.tableName,
@@ -45,8 +49,10 @@ export class MySimpleWebsiteStack extends Stack {
     });
 
     // 投稿を作成するLambda
-    const createPostLambda = new lambda.NodejsFunction(this, 'CreatePostHandler', {
-      entry: path.join(__dirname, '../lambda/createPost.ts'),
+    const createPostLambda = new PythonFunction(this, 'CreatePostHandler', {
+      entry: path.join(__dirname, '../lambda'),
+      runtime: lambda.Runtime.PYTHON_3_11,  // ★必須: Pythonのバージョンを指定
+      index: 'createPost.py',
       handler: 'handler',
       environment: {
         TABLE_NAME: table.tableName,
