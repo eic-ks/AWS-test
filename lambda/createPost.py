@@ -9,6 +9,10 @@ table = dynamodb.Table(os.environ['TABLE_NAME'])
 
 def handler(event, context):
     try:
+        # Cognitoオーソライザーから渡されたユーザーIDを取得
+        # 'sub'はユーザーを一意に識別するIDです
+        user_id = event['requestContext']['authorizer']['claims']['sub']
+        
         body = json.loads(event.get('body', '{}'))
         content = body.get('content')
 
@@ -22,8 +26,8 @@ def handler(event, context):
         new_post = {
             'id': str(uuid.uuid4()),
             'content': content,
-            # DynamoDBはfloatを嫌うことがあるのでintで保存
-            'timestamp': int(time.time() * 1000)
+            'timestamp': int(time.time() * 1000),
+            'owner': user_id  # ★★★ 投稿者のIDを保存 ★★★
         }
         
         table.put_item(Item=new_post)

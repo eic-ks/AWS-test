@@ -6,6 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>掲示板投稿テスト</title>
+    <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.1/dist/amazon-cognito-identity.min.js"></script>
     <script src="/config.js"></script>
     <style>
         body { font-family: sans-serif; margin: 20px; }
@@ -20,6 +21,34 @@
     </style>
 </head>
 <body>
+
+
+    <div id="auth-container">
+        <h2>ユーザー登録</h2>
+        <input type="email" id="signup-email" placeholder="Eメールアドレス"><br>
+        <input type="password" id="signup-password" placeholder="パスワード"><br>
+        <button onclick="signUp()">登録</button>
+        <p id="signup-message"></p>
+
+        <h2>Eメール検証</h2>
+        <input type="email" id="confirm-email" placeholder="Eメールアドレス"><br>
+        <input type="text" id="confirm-code" placeholder="検証コード"><br>
+        <button onclick="confirmSignUp()">検証</button>
+        <p id="confirm-message"></p>
+
+        <h2>ログイン</h2>
+        <input type="email" id="signin-email" placeholder="Eメールアドレス"><br>
+        <input type="password" id="signin-password" placeholder="パスワード"><br>
+        <button onclick="signIn()">ログイン</button>
+        <p id="signin-message"></p>
+    </div>
+
+    <div id="user-session" style="display:none;">
+        <p>ログイン中: <span id="currentUser"></span></p>
+        <button onclick="signOut()">ログアウト</button>
+    </div>
+
+
     <div class="new-post-container">
         <h1>新しい投稿</h1>
         <textarea id="postContent" rows="5" cols="50" placeholder="ここに投稿内容を入力してください。"></textarea><br>
@@ -37,29 +66,100 @@
 
 
     <script>
-        const serverUrl = window.APP_CONFIG.apiUrl //backend api のURL
+        // --- 設定 ---
+        const config = window.APP_CONFIG;
+        const poolData = {
+            UserPoolId: config.userPoolId,
+            ClientId: config.userPoolClientId,
+        };
+        const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+        let idToken = null;
+
+        // --- 認証関数 ---
+        function signUp() {
+            const email = document.getElementById('signup-email').value;
+            const password = document.getElementById('signup-password').value;
+            const messageEl = document.getElementById('signup-message');
+
+            const attributeList = [
+                new AmazonCognitoIdentity.CognitoUserAttribute({ Name: 'email', Value: email })
+            ];
+
+            userPool.signUp(email, password, attributeList, null, (err, result) => {
+                if (err) {
+                    messageEl.textContent = `登録エラー: ${err.message}`;
+                    return;
+                }
+                messageEl.textContent = `登録に成功しました！ ${email} に送信された検証コードを入力してください。`;
+            });
+        }
+
+        function confirmSignUp() {
+            const email = document.getElementById('confirm-email').value;
+            const code = document.getElementById('confirm-code').value;
+            const messageEl = document.getElementById('confirm-message');
+            
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser({ Username: email, Pool: userPool });
+            cognitoUser.confirmRegistration(code, true, (err, result) => {
+                if (err) {
+                    messageEl.textContent = `検証エラー: ${err.message}`;
+                    return;
+                }
+                messageEl.textContent = '検証が完了しました。ログインしてください。';
+            });
+        }
+
+        function signIn() {
+            const email = document.getElementById('signin-email').value;
+            const password = document.getElementById('signin-password').value;
+            const messageEl = document.getElementById('signin-message');
+
+            const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails({ Username: email, Password: password });
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser({ Username: email, Pool: userPool });
+
+            cognitoUser.authenticateUser(authenticationDetails, {
+                onSuccess: (result) => {
+                    idToken = result.getIdToken().getJwtToken();
+                    messageEl.textContent = 'ログイン成功！';
+                    document.getElementById('auth-container').style.display = 'none';
+                    document.getElementById('user-session').style.display = 'block';
+                    document.getElementById('currentUser').textContent = email;
+                },
+                onFailure: (err) => {
+                    messageEl.textContent = `ログイン失敗: ${err.message}`;
+                },
+            });
+        }
+
+        function signOut() {
+            idToken = null;
+            document.getElementById('auth-container').style.display = 'block';
+            document.getElementById('user-session').style.display = 'none';
+        }
+
+        // --- 掲示板の関数 (submitPostを修正) ---
+        const serverUrl = config.apiUrl;
 
         async function submitPost() {
-            const postContent = document.getElementById('postContent').value;
-            const messageElement = document.getElementById('message');
-
-            if (!postContent.trim()) {
-                messageElement.textContent = "投稿内容を入力してください。";
-                messageElement.style.color = "red";
+            if (!idToken) {
+                alert('投稿するにはログインしてください。');
                 return;
             }
 
+            const postContent = document.getElementById('postContent').value;
+            const messageElement = document.getElementById('message');
+
             try {
-                const response = await fetch(`${serverUrl}/post`, { // POSTエンドポイント
+                const response = await fetch(`${serverUrl}/posts`, { // ★エンドポイントを/postsに変更
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Authorization': idToken // ★認証トークンをヘッダーに追加
                     },
                     body: JSON.stringify({ content: postContent })
                 });
 
                 const data = await response.json();
-
                 if (response.ok) {
                     messageElement.textContent = `投稿が成功しました！ (ID: ${data.postId})`;
                     messageElement.style.color = "green";
@@ -118,8 +218,10 @@
             }
         }
 
-        // ページ読み込み時に投稿を自動的に読み込む
+
         window.onload = fetchPosts;
     </script>
+
 </body>
 </html>
+

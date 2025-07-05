@@ -1,4 +1,5 @@
 // backend
+import { aws_cognito as cognito } from 'aws-cdk-lib';
 import { aws_apigateway as apigateway } from 'aws-cdk-lib';
 // import { aws_lambda_nodejs as lambda } from 'aws-cdk-lib'; // lambdaをtypescriptで書く場合
 import { aws_lambda as lambda } from 'aws-cdk-lib';
@@ -27,14 +28,44 @@ export class MySimpleWebsiteStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
+    // Cognitoによる認証を追加
+    // 1. Cognito User Poolを作成
+    const userPool = new cognito.UserPool(this, 'BulletinBoardUserPool', {
+      userPoolName: 'bulletin-board-users',
+      selfSignUpEnabled: true, // ユーザー自身がサインアップできるようにする
+      signInAliases: { email: true }, // Eメールをユーザー名として使う
+      autoVerify: { email: true }, // Eメールを自動で検証
+      passwordPolicy: { // パスワードの要件
+        minLength: 8,
+        requireLowercase: true,
+        requireUppercase: true,
+        requireDigits: true,
+        requireSymbols: false,
+      },
+    });
+
+    // 2. User Pool Clientを作成 (フロントエンドが対話する相手)
+    const userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
+      userPool,
+    });
+
+
     // 2. API Gatewayを作成
     const api = new apigateway.RestApi(this, 'PostsApi', {
       restApiName: 'Posts Service',
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ['Content-Type'], // Content-Typeヘッダーを許可
+        allowHeaders: ['Content-Type', 'Authorization'], // Corsで許可するヘッダーを選択
       },
+    });
+
+
+    // ★★★ここからCognitoオーソライザーのコードを追加★★★
+
+    // 3. Cognitoオーソライザーを作成
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'PostsAuthorizer', {
+      cognitoUserPools: [userPool],
     });
     
     // 3. Lambda関数を作成
@@ -69,7 +100,10 @@ export class MySimpleWebsiteStack extends Stack {
     posts.addMethod('GET', new apigateway.LambdaIntegration(getPostsLambda));
 
     const post = api.root.addResource('post');
-    post.addMethod('POST', new apigateway.LambdaIntegration(createPostLambda));
+    posts.addMethod('POST', new apigateway.LambdaIntegration(createPostLambda), {
+      authorizer: authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
 
     // 6. API GatewayのURLを出力
     new CfnOutput(this, 'ApiUrl', {
@@ -114,7 +148,10 @@ export class MySimpleWebsiteStack extends Stack {
         s3deploy.Source.data(
           '/config.js',
           `window.APP_CONFIG = {
-            apiUrl: "${api.url.replace(/\/$/, '')}" 
+            apiUrl: "${api.url.replace(/\/$/, '')}",
+            userPoolId: "${userPool.userPoolId}",
+            userPoolClientId: "${userPoolClient.userPoolClientId}",
+            region: "${this.region}"
           };`
         )
       ],
@@ -130,5 +167,8 @@ export class MySimpleWebsiteStack extends Stack {
       value: distribution.distributionDomainName,
       description: 'CloudFront distribution domain name',
     });
+    // CognitoのIDが出力
+    new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
+    new CfnOutput(this, 'UserPoolClientId', { value: userPoolClient.userPoolClientId });
   }
 }
