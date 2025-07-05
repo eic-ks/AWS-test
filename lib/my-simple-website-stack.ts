@@ -33,6 +33,7 @@ export class MySimpleWebsiteStack extends Stack {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
+        allowHeaders: ['Content-Type'], // Content-Typeヘッダーを許可
       },
     });
     
@@ -102,28 +103,25 @@ export class MySimpleWebsiteStack extends Stack {
       defaultRootObject: 'index.html',
     });
 
-    // 3. 'frontend' ディレクトリのファイルをS3バケットにデプロイ
-    new s3deploy.BucketDeployment(this, 'DeployWebsite', {
-      sources: [s3deploy.Source.asset('./frontend')],
-      destinationBucket: websiteBucket,
-      distribution: distribution,
-      distributionPaths: ['/*'],
-    });
-
-
-    // フロントエンド用の設定ファイル(config.js)を動的に生成してデプロイ
-    new s3deploy.BucketDeployment(this, 'DeployConfig', {
+   
+    // 3. 'frontend'フォルダと'config.js'をまとめてS3バケットにデプロイ
+    new s3deploy.BucketDeployment(this, 'DeployWebsiteAndConfig', {
       sources: [
+        // ソース1: frontendフォルダ
+        s3deploy.Source.asset(path.join(__dirname, '../frontend')),
+        
+        // ソース2: 動的に生成するconfig.js
         s3deploy.Source.data(
-          '/config.js', // S3バケット内のファイル名
+          '/config.js',
           `window.APP_CONFIG = {
-            apiUrl: "${api.url}"
+            apiUrl: "${api.url.replace(/\/$/, '')}" 
           };`
         )
       ],
       destinationBucket: websiteBucket,
       distribution: distribution,
-      distributionPaths: ['/config.js'], // config.jsのキャッシュもクリア
+      // キャッシュクリアの対象を両方のファイルにする
+      distributionPaths: ['/index.html', '/config.js', '/*'],
     });
 
 

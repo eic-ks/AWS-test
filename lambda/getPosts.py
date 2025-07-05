@@ -3,11 +3,11 @@ import json
 import boto3
 from decimal import Decimal
 
-# Decimal型をJSONシリアライズ可能にするためのヘルパークラス
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, Decimal):
-            return int(obj) # または float(obj)
+            # タイムスタンプは数値として扱う
+            return int(obj)
         return super(DecimalEncoder, self).default(obj)
 
 dynamodb = boto3.resource('dynamodb')
@@ -16,22 +16,23 @@ table = dynamodb.Table(os.environ['TABLE_NAME'])
 def handler(event, context):
     try:
         # DynamoDBから全件スキャンして取得
-        response = table.scan(
-            # タイムスタンプの降順でソート
-            ScanIndexForward=False
-        )
+        response = table.scan()
+        
+        items = response.get('Items', [])
+        
+        # ★★★ ここでPython側でタイムスタンプの降順にソートする ★★★
+        sorted_items = sorted(items, key=lambda x: x['timestamp'], reverse=True)
         
         return {
             'statusCode': 200,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*' # CORS設定
+                'Access-Control-Allow-Origin': '*'
             },
-            # Decimal型を処理するためにカスタムエンコーダーを使用
-            'body': json.dumps(response.get('Items', []), cls=DecimalEncoder)
+            'body': json.dumps(sorted_items, cls=DecimalEncoder)
         }
     except Exception as e:
-        print(e)
+        print(f"Error fetching posts: {e}")
         return {
             'statusCode': 500,
             'headers': {
