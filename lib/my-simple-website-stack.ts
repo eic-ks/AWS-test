@@ -99,7 +99,6 @@ export class MySimpleWebsiteStack extends Stack {
     const posts = api.root.addResource('posts');
     posts.addMethod('GET', new apigateway.LambdaIntegration(getPostsLambda));
 
-    const post = api.root.addResource('post');
     posts.addMethod('POST', new apigateway.LambdaIntegration(createPostLambda), {
       authorizer: authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
